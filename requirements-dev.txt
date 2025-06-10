@@ -1,0 +1,14 @@
+# Build Packages
+build
+setuptools
+wheel
+twine
+
+# Lint & Coverage
+ruff
+mypy
+coverage
+
+# Test
+pytest
+pytest-cov
