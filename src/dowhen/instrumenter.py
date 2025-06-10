@@ -5,11 +5,8 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # pragma: no cover
-    from .event_handler import EventHandler
-
+from .event_handler import EventHandler
 
 E = sys.monitoring.events
 
@@ -44,6 +41,9 @@ class Instrumenter:
     def submit(self, event_handler: EventHandler):
         event = event_handler.event
         if event.event_type == "line":
+            assert (
+                isinstance(event.event_data, dict) and "line_number" in event.event_data
+            )
             self.register_line_event(
                 event.code,
                 event.event_data["line_number"],
@@ -106,6 +106,9 @@ class Instrumenter:
         ):
             return
         if event.event_type == "line":
+            assert (
+                isinstance(event.event_data, dict) and "line_number" in event.event_data
+            )
             handlers = self.handlers[event.code]["line"].get(
                 event.event_data["line_number"], []
             )
@@ -116,6 +119,10 @@ class Instrumenter:
             handlers.remove(event_handler)
 
             if event.event_type == "line" and not handlers:
+                assert (
+                    isinstance(event.event_data, dict)
+                    and "line_number" in event.event_data
+                )
                 del self.handlers[event.code]["line"][event.event_data["line_number"]]
 
             if not self.handlers[event.code][event.event_type]:
