@@ -20,12 +20,50 @@ class Event:
         code: CodeType,
         event_type: Literal["line", "start", "return"],
         event_data: dict | None,
-        condition: str | Callable[..., bool] | None = None,
     ):
         self.code = code
         self.event_type = event_type
-        self.event_data = event_data
+        self.event_data = event_data or {}
+
+
+class Trigger:
+    def __init__(
+        self,
+        events: list[Event],
+        condition: str | Callable[..., bool] | None = None,
+    ):
+        self.events = events
         self.condition = condition
+
+    @classmethod
+    def get_code_from_entity(
+        cls, entity: CodeType | FunctionType | MethodType
+    ) -> tuple[list[CodeType], list[CodeType]]:
+        """
+        Get the direct code objects and the internal code objects from the given entity.
+        """
+        direct_code_objects: list[CodeType] = []
+        all_code_objects: list[CodeType] = []
+
+        if inspect.isfunction(entity) or inspect.ismethod(entity):
+            direct_code_objects.append(entity.__code__)
+        elif inspect.iscode(entity):
+            direct_code_objects.append(entity)
+        else:
+            raise TypeError(f"Unknown entity type: {type(entity)}")
+
+        for code in direct_code_objects:
+            stack = [code]
+            while stack:
+                current_code = stack.pop()
+                assert isinstance(current_code, CodeType)
+
+                all_code_objects.append(current_code)
+                for const in current_code.co_consts:
+                    if isinstance(const, CodeType):
+                        stack.append(const)
+
+        return direct_code_objects, all_code_objects
 
     @classmethod
     def when(
@@ -34,13 +72,6 @@ class Event:
         identifier: str | int | tuple | list | None = None,
         condition: str | Callable[..., bool] | None = None,
     ):
-        if inspect.isfunction(entity):
-            code = entity.__code__
-        elif inspect.iscode(entity):
-            code = entity
-        else:
-            raise TypeError(f"Unknown entity type: {type(entity)}")
-
         if isinstance(condition, str):
             try:
                 compile(condition, "<string>", "eval")
@@ -51,19 +82,35 @@ class Event:
                 f"Condition must be a string or callable, got {type(condition)}"
             )
 
+        events = []
+
+        direct_code_objects, all_code_objects = cls.get_code_from_entity(entity)
+
         if identifier == "<start>":
-            return cls(code, "start", {}, condition=condition)
+            for code in direct_code_objects:
+                events.append(Event(code, "start", None))
+            return cls(events, condition=condition)
         elif identifier == "<return>":
-            return cls(code, "return", {}, condition=condition)
+            for code in direct_code_objects:
+                events.append(Event(code, "return", None))
+            return cls(events, condition=condition)
 
         if identifier is None:
-            return cls(code, "line", {"line_number": None}, condition=condition)
+            for code in direct_code_objects:
+                events.append(Event(code, "line", {"line_number": None}))
+            return cls(events, condition=condition)
 
-        line_number = get_line_number(code, identifier)
-        if line_number is None:
-            raise ValueError("Could not determine line number from identifier.")
+        for code in all_code_objects:
+            line_number = get_line_number(code, identifier)
+            if line_number is not None:
+                events.append(Event(code, "line", {"line_number": line_number}))
 
-        return cls(code, "line", {"line_number": line_number}, condition=condition)
+        if not events:
+            raise ValueError(
+                "Could not set any event based on the entity and identifier."
+            )
+
+        return cls(events, condition=condition)
 
     def bp(self) -> "EventHandler":
         from .callback import Callback
@@ -103,4 +150,4 @@ class Event:
         return handler
 
 
-when = Event.when
+when = Trigger.when

@@ -39,20 +39,23 @@ class Instrumenter:
         self.handlers.clear()
 
     def submit(self, event_handler: EventHandler):
-        event = event_handler.event
-        if event.event_type == "line":
-            assert (
-                isinstance(event.event_data, dict) and "line_number" in event.event_data
-            )
-            self.register_line_event(
-                event.code,
-                event.event_data["line_number"],
-                event_handler,
-            )
-        elif event.event_type == "start":
-            self.register_start_event(event.code, event_handler)
-        elif event.event_type == "return":
-            self.register_return_event(event.code, event_handler)
+        trigger = event_handler.trigger
+        for event in trigger.events:
+            code = event.code
+            if event.event_type == "line":
+                assert (
+                    isinstance(event.event_data, dict)
+                    and "line_number" in event.event_data
+                )
+                self.register_line_event(
+                    code,
+                    event.event_data["line_number"],
+                    event_handler,
+                )
+            elif event.event_type == "start":
+                self.register_start_event(code, event_handler)
+            elif event.event_type == "return":
+                self.register_return_event(code, event_handler)
 
     def register_line_event(self, code, line_number, event_handler: EventHandler):
         self.handlers[code].setdefault("line", {}).setdefault(line_number, []).append(
@@ -106,44 +109,44 @@ class Instrumenter:
         return sys.monitoring.DISABLE
 
     def remove_handler(self, event_handler: EventHandler):
-        event = event_handler.event
-        if (
-            event.code not in self.handlers
-            or event.event_type not in self.handlers[event.code]
-        ):
-            return
-        if event.event_type == "line":
-            assert (
-                isinstance(event.event_data, dict) and "line_number" in event.event_data
-            )
-            handlers = self.handlers[event.code]["line"].get(
-                event.event_data["line_number"], []
-            )
-        else:
-            handlers = self.handlers[event.code][event.event_type]
-
-        if event_handler in handlers:
-            handlers.remove(event_handler)
-
-            if event.event_type == "line" and not handlers:
+        trigger = event_handler.trigger
+        for event in trigger.events:
+            code = event.code
+            if code not in self.handlers or event.event_type not in self.handlers[code]:
+                continue
+            if event.event_type == "line":
                 assert (
                     isinstance(event.event_data, dict)
                     and "line_number" in event.event_data
                 )
-                del self.handlers[event.code]["line"][event.event_data["line_number"]]
-
-            if not self.handlers[event.code][event.event_type]:
-                del self.handlers[event.code][event.event_type]
-                events = sys.monitoring.get_local_events(self.tool_id, event.code)
-                removed_event = {
-                    "line": E.LINE,
-                    "start": E.PY_START,
-                    "return": E.PY_RETURN,
-                }[event.event_type]
-
-                sys.monitoring.set_local_events(
-                    self.tool_id, event.code, events & ~removed_event
+                handlers = self.handlers[code]["line"].get(
+                    event.event_data["line_number"], []
                 )
+            else:
+                handlers = self.handlers[code][event.event_type]
+
+            if event_handler in handlers:
+                handlers.remove(event_handler)
+
+                if event.event_type == "line" and not handlers:
+                    assert (
+                        isinstance(event.event_data, dict)
+                        and "line_number" in event.event_data
+                    )
+                    del self.handlers[code]["line"][event.event_data["line_number"]]
+
+                if not self.handlers[code][event.event_type]:
+                    del self.handlers[code][event.event_type]
+                    events = sys.monitoring.get_local_events(self.tool_id, code)
+                    removed_event = {
+                        "line": E.LINE,
+                        "start": E.PY_START,
+                        "return": E.PY_RETURN,
+                    }[event.event_type]
+
+                    sys.monitoring.set_local_events(
+                        self.tool_id, code, events & ~removed_event
+                    )
 
 
 def clear_all():
