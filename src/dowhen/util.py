@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import re
 from collections.abc import Callable
 from types import CodeType, FrameType, FunctionType, MethodType, ModuleType
 from typing import Any
@@ -13,44 +14,46 @@ from typing import Any
 
 @functools.lru_cache(maxsize=256)
 def get_line_numbers(
-    code: CodeType, identifier: int | str | list | tuple
+    code: CodeType, identifier: int | str | re.Pattern | tuple
 ) -> list[int] | None:
-    if not isinstance(identifier, (list, tuple)):
-        identifier = [identifier]
+    if not isinstance(identifier, tuple):
+        identifier = (identifier,)
 
     line_numbers_sets = []
 
+    try:
+        lines, start_line = inspect.getsourcelines(code)
+        # We need to find the actual definition of the function/class
+        # when it is decorated
+        while lines[0].strip().startswith("@"):
+            # If the first line is a decorator, we need to skip it
+            # and move to the next line
+            lines.pop(0)
+            start_line += 1
+    except OSError:
+        lines, start_line = [], code.co_firstlineno
+
     for ident in identifier:
         if isinstance(ident, int):
-            line_numbers_sets.append({ident})
-        elif isinstance(ident, str):
-            if ident.startswith("+") and ident[1:].isdigit():
-                # We need to find the actual definition of the function/class
-                # when it is decorated
-                try:
-                    lines, start_line = inspect.getsourcelines(code)
-                    for idx, line in enumerate(lines):
-                        # Skip all the decorators
-                        if not line.strip().startswith("@"):
-                            break
-                    firstlineno = start_line + idx
-                except OSError:
-                    # That's our best guess
-                    firstlineno = code.co_firstlineno
-                line_numbers_sets.append({firstlineno + int(ident[1:])})
-            else:
-                try:
-                    lines, start_line = inspect.getsourcelines(code)
-                except OSError:
-                    return None
+            line_numbers = {ident}
+        else:
+            if isinstance(ident, str) and ident.startswith("+") and ident[1:].isdigit():
+                line_numbers = {start_line + int(ident[1:])}
+            elif isinstance(ident, str) or isinstance(ident, re.Pattern):
                 line_numbers = set()
                 for i, line in enumerate(lines):
-                    if line.strip().startswith(ident):
+                    line = line.strip()
+                    if (isinstance(ident, str) and line.startswith(ident)) or (
+                        isinstance(ident, re.Pattern) and ident.match(line)
+                    ):
                         line_number = start_line + i
                         line_numbers.add(line_number)
-                line_numbers_sets.append(line_numbers)
-        else:
-            raise TypeError(f"Unknown identifier type: {type(ident)}")
+            else:
+                raise TypeError(f"Unknown identifier type: {type(ident)}")
+
+        if not line_numbers:
+            return None
+        line_numbers_sets.append(line_numbers)
 
     agreed_line_numbers = set.intersection(*line_numbers_sets)
     agreed_line_numbers = {
