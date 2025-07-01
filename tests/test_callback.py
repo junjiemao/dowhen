@@ -42,12 +42,39 @@ def test_do_when_with_method():
         def change(self, x):
             return {"x": 1}
 
-    dowhen.do(A().change).when(f, "return x")
+        @classmethod
+        def classmethod_change(cls, x):
+            return {"x": 2}
+
+        @staticmethod
+        def staticmethod_change(x):
+            return {"x": 3}
+
+    with dowhen.do(A().change).when(f, "return x"):
+        assert f(2) == 1
+
+    with dowhen.do(A.classmethod_change).when(f, "return x"):
+        assert f(3) == 2
+
+    with dowhen.do(A.staticmethod_change).when(f, "return x"):
+        assert f(4) == 3
 
 
 def test_callback_call():
     x = 0
     callback = dowhen.do("x = 1")
+    frame = sys._getframe()
+    callback(frame)
+    assert x == 1
+
+
+def test_method_callback_call():
+    class A:
+        def change(self, x):
+            return {"x": 1}
+
+    x = 0
+    callback = dowhen.do(A().change)
     frame = sys._getframe()
     callback(frame)
     assert x == 1
