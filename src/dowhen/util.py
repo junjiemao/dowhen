@@ -25,7 +25,16 @@ def getrealsourcelines(obj) -> tuple[list[str], int]:
             lines.pop(0)
             start_line += 1
     except OSError:
-        lines, start_line = [], obj.co_firstlineno
+        # Handle different types of objects
+        if hasattr(obj, 'co_firstlineno'):
+            # CodeType object
+            lines, start_line = [], obj.co_firstlineno
+        elif hasattr(obj, '__code__'):
+            # Function/method with __code__ attribute
+            lines, start_line = [], obj.__code__.co_firstlineno
+        else:
+            # Fallback for other types
+            lines, start_line = [], 1
 
     return lines, start_line
 
